@@ -1,0 +1,20 @@
+Firmware ESP32-S3 N16R8 cho Canon CAPT (chưa thử trên máy in thật)
+
+  lbp2900-full-0x0.bin  LBP2900 / LBP2900B      (hostname lbp2900, tên "Canon LBP2900 (ESP32)")
+  lbp3050-full-0x0.bin  LBP3010 / LBP3018 / LBP3050 (hostname lbp3050, tên "Canon LBP3050 (ESP32)")
+  *-app.bin             chỉ phần ứng dụng (OTA, hoặc nạp ở 0x20000 khi bootloader/bảng phân vùng đã có)
+
+Nạp lần đầu (cắm cổng COM của bo, KHÔNG phải cổng "USB"):
+  pip install esptool
+  esptool.py --chip esp32s3 --baud 921600 write_flash 0x0 lbp2900-full-0x0.bin
+  (Windows: esptool --chip esp32s3 --port COM5 write_flash 0x0 lbp2900-full-0x0.bin)
+
+Wi-Fi (không có mật khẩu nào trong firmware):
+  - Điện thoại vào mạng "lbp2900-setup" (hoặc "lbp3050-setup"), trang cài đặt tự mở
+    (nếu không: http://192.168.4.1/wifi), chọn mạng, nhập mật khẩu; hoặc
+  - python tools/set_wifi.py COM5   (pip install pyserial)
+Sau đó: http://lbp2900.local/ , in thử: nhấn BOOT 2 lần.
+MODE=debug: log ở http://<bo>:8080/log và nc <bo> 2323, bật trace CAPT:
+  curl -X POST "http://<bo>:8080/capt?trace=1"
+Lưu ý: debug cho phép bất kỳ ai trong mạng cập nhật firmware (OTA không mật khẩu).
+Các bước thử phần cứng: docs/capt.md mục 7.
