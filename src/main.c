@@ -24,6 +24,7 @@
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "airprint.h"
 #include "airprint_esp.h"
 #include "debug.h"
 #include "local_config.h"
@@ -213,7 +214,14 @@ static void button_task(void *arg)
             long_fired = true;
             if (s_busy || s_airprint_busy) {
                 ESP_LOGW(TAG, "cancel requested");
-                usb_printer_cancel();
+                if (print_job_driver()->soft_cancel) {
+                    // host-based printer: the driver ends the page cleanly
+                    // (airprint_esp forces the abort if it does not)
+                    print_job_cancel_test_page();
+                    airprint_cancel_active();
+                } else {
+                    usb_printer_cancel();
+                }
                 scan_service_cancel();
             }
         }

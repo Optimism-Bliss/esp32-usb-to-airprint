@@ -42,6 +42,13 @@ components/printers/    portable C: the printer drivers
   printers.c            the list of drivers, printer_driver_find(), printer_driver_match()
   canon_pixma.c         Canon MG2500 and 22 related series: canon_bjl + bjl_render, test
                         page, IVEC status
+  canon_capt.c          Canon LBP2900, LBP3010/3018/3050 (CAPT): gray -> 1 bit (clustered dot),
+                        Hi-SCoA bands into one page buffer (PSRAM), components/capt
+components/capt/        portable C: Canon CAPT lasers (docs/capt.md)
+  capt.c                the CAPT engine: request/reply commands, status, page sequence,
+                        paper out, cancel, recovery; every wait has a deadline
+  hiscoa.c              Hi-SCoA band compression (byte-identical to captdriver's encoder)
+  fake_capt.c           emulated CAPT printer, host tests only (flags protocol violations)
 components/scanner/     portable C (pthreads)
   pixma_scan.c          MG2500 scan protocol (from SANE's pixma backend)
   jpeg_enc.c            baseline JPEG encoder fed line by line (integer only)
@@ -83,9 +90,13 @@ host/                   native builds of the portable code (make -C host)
                         SIGUSR1 = the button, GET /dev/oled.pbm = the screen
   scan_host             scanner protocol tests, JPEG output for check_jpeg.py
   oled_host             screen drawing tests, every screen -> out/oled-*.pbm
+  capt_host             Hi-SCoA, the CAPT engine and drivers against the emulated printer
+                        (paper out, cancel, unplug, lost reply, stuck engine, large pages)
 tools/
   run_tests.sh          all host checks (optional parts via env vars, see below)
   qemu_selftest.sh      the firmware on emulated ESP32-S3: IPP, prints, scans, OTA, crash
+  ipp_print.py          prints PWG raster test pages over IPP and follows the job (no CUPS needed)
+  captdriver_ref/       Hi-SCoA byte comparison with captdriver (GPL, cloned at test time only)
   remote.py             MODE=debug board over WiFi: info, log, upload, reboot, crash, panic, level
   ota_target.py         PlatformIO targets: pio run -t ota / -t logs; after each firmware.bin
                         the symbol table and the ELF kept in .pio/elf/<elf sha256>.elf
@@ -194,6 +205,16 @@ port status 0x18 (selected, no error)
 - Still Canon-specific outside the driver: `usb_printer.c` reassembles back-channel replies as IVEC XML (`</cmd>`) and fills `state`, `detail`, `data` from `GetStatusResponse`; the scanner is Canon's pixma protocol; the web UI's print dialog has A4/Letter at 300/600 dpi with canon_bjl's printable area (`web/src/lib/layout.ts`).
 - Adding one: a Canon model whose stream is one of the `canon_bjl` variants is a `CANON_PIXMA(...)` line in `canon_pixma.c` plus its entry in `printers.c`. Another printer: a new source file in `components/printers/`, listed in `printers.c`, `components/printers/CMakeLists.txt` and `PRINTERS` in `host/Makefile`. Try it with `PRINTER_DRIVER=<id> host/airprint_host` (jobs land in `host/out/job-N.prn`); set `.scanner = false` unless the device is a Canon pixma scanner. The board picks it by USB id or model name; `CONFIG_PRINTER_DRIVER` in `sdkconfig.defaults` only sets the default.
 - `bjl_host selftest` checks that every Canon driver's test page is byte-identical to the direct `canon_bjl` test page of its model at every resolution; the reference CRCs below go through the driver on the host (AirPrint prints) and in QEMU (dry runs and prints, `canon-mg2500`, the default with no printer).
+
+## Canon CAPT lasers (LBP2900, LBP3050)
+
+Full write-up, sources, what is verified vs assumed, and the hardware test plan: `docs/capt.md`. In short:
+
+- Host-based: no PDL. The driver renders 1-bit 600 dpi, compresses 70-line bands with Hi-SCoA into one page buffer (the shared PSRAM buffer, `print_job_page_buffer`), and `components/capt` runs the request/reply protocol (a reply must be read before the next command).
+- `printer_driver_t.raw_back_channel`: `usb_printer` does no IVEC polling and no parsing; `usb_printer_read()` is a synchronous bulk IN read with a timeout (flushes first, aborts the transfer on timeout). `poll` hook: `print_job.c`'s task asks for the status every 3 s between jobs; the driver reports through `printer_io_t.status` into `usb_printer_set_status`. `soft_cancel`: cancel sets a flag the engine checks (pages already started finish), the USB abort only after 60 s. GET_PORT_STATUS and SOFT_RESET are not sent to CAPT printers.
+- Engine sequence = captdriver's (printed on LBP2900 and LBP3010 by its users) plus: drain stale replies, ReserveUnit retry after clearing, buffer-level backpressure with early StartPrint for pages larger than the printer's memory, paper-out debounce, deadlines on every wait, error state cleared per job. `capt_settings` (pipeline 0/1, poll interval, timeouts, trace) and density / toner save are settable on the debug server: `GET/POST :8080/capt?trace=1&pipeline=1&density=7`.
+- Tests: `host/capt_host` (CAPT engine scenarios on `fake_capt.c`, both drivers: image placement at 300/600 dpi, gray/RGB, cancel, Letter geometry, test page to `host/out/capt-testpage.pbm`); `CAPTDRIVER=1 tools/run_tests.sh` compares Hi-SCoA with captdriver byte for byte; `PRINTER_DRIVER=canon-lbp2900 host/airprint_host` runs the IPP server on the emulated printer (`FAKE_CAPT_PRINT_MS`, `FAKE_CAPT_PAPER`), pages decoded to `host/out/job-<n>-<page>.pbm`, printed with `tools/ipp_print.py`.
+- Not run on a real CAPT printer yet (2026-11-21).
 
 ## Printer protocol (MG2500 series)
 

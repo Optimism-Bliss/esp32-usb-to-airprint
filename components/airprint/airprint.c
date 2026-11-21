@@ -917,6 +917,37 @@ static int pipe_sync(void *ctx, const char *what)
     return s_cfg->job_sync ? s_cfg->job_sync(s_cfg->ctx, what) : 0;
 }
 
+static int pipe_read(void *ctx, uint8_t *buf, size_t max, int timeout_ms)
+{
+    return s_cfg->job_read ? s_cfg->job_read(s_cfg->ctx, buf, max, timeout_ms) : -1;
+}
+
+static bool pipe_cancelled(void *ctx)
+{
+    return ((pipe_t *)ctx)->job->cancel;
+}
+
+static uint8_t *pipe_page_buffer(void *ctx, size_t *size)
+{
+    return s_cfg->page_buffer ? s_cfg->page_buffer(s_cfg->ctx, size) : NULL;
+}
+
+static void pipe_status(void *ctx, const char *state, const char *detail, const char *data)
+{
+    if (s_cfg->job_status)
+        s_cfg->job_status(s_cfg->ctx, state, detail, data);
+}
+
+static void pipe_log(void *ctx, int level, const char *msg)
+{
+    if (s_cfg->driver_log)
+        s_cfg->driver_log(s_cfg->ctx, level, msg);
+    else if (level <= 1)
+        LOGW("%s", msg);
+    else if (level == 2)
+        LOGI("%s", msg);
+}
+
 static int pipe_page_begin(void *user, const raster_page_t *pg)
 {
     pipe_t *p = user;
@@ -930,7 +961,8 @@ static int pipe_page_begin(void *user, const raster_page_t *pg)
     }
     if (!p->drv_job) {
         int paper = printer_driver_paper_for(d, pg->height, pg->dpi);
-        p->io = (printer_io_t){.write = pipe_write, .sync = pipe_sync, .ctx = p};
+        p->io = (printer_io_t){.write = pipe_write, .sync = pipe_sync, .read = pipe_read, .cancelled = pipe_cancelled,
+                               .page_buffer = pipe_page_buffer, .status = pipe_status, .log = pipe_log, .ctx = p};
         p->dpi = pg->dpi;
         LOGI("job %d: %s %d dpi, %s", p->job->id, d->papers[paper].name, pg->dpi, pg->bytes_pp == 3 ? "color" : "gray");
         p->drv_job = d->job_begin(d, &p->io, pg->dpi, paper);
@@ -1366,6 +1398,25 @@ static void get_status_cached(airprint_status_t *st)
     }
     *st = cached;
     pthread_mutex_unlock(&cache_lock);
+}
+
+bool airprint_cancel_active(void)
+{
+    if (!s_cfg)
+        return false;
+    pthread_mutex_lock(&s_lock);
+    job_t *j = s_active;
+    bool found = j && !job_done(j);
+    if (found) {
+        j->cancel = true;
+        if (j->state == JOB_PENDING)
+            job_finish(j, JOB_CANCELED);
+        else if (s_cfg->job_cancel)
+            s_cfg->job_cancel(s_cfg->ctx);
+        LOGI("job %d: cancel requested", j->id);
+    }
+    pthread_mutex_unlock(&s_lock);
+    return found;
 }
 
 int airprint_get_activity(airprint_activity_t *a)

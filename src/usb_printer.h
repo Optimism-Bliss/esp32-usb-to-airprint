@@ -50,6 +50,15 @@ esp_err_t usb_printer_flush(void);
 esp_err_t usb_printer_wait_response(const char *needle, uint32_t timeout_ms);
 void usb_printer_job_end(void);
 
+// --- raw back channel (host-based printers: Canon CAPT). No status polling
+// or IVEC parsing; the job's driver reads the replies itself.
+void usb_printer_set_raw(bool raw);
+// Sends what is buffered, then one bulk IN transfer: bytes read (<= max),
+// 0 = nothing within timeout_ms, -1 = failed (gone, canceled, stuck, too long).
+int usb_printer_read(uint8_t *buf, size_t max, uint32_t timeout_ms);
+// The printer's status as a raw driver reports it (usb_printer_get_status).
+void usb_printer_set_status(const char *state, const char *detail, const char *data);
+
 // Abort a running job from any task: stops pending transfers and makes the
 // job's write/flush calls fail with ESP_ERR_INVALID_STATE.
 void usb_printer_cancel(void);

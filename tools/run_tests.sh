@@ -2,6 +2,8 @@
 # Everything that can be verified without hardware.
 #   tools/run_tests.sh               host unit tests + test page decode
 #   GUTENPRINT=1 tools/run_tests.sh  + byte-for-byte comparison with Gutenprint
+#   CAPTDRIVER=1 tools/run_tests.sh  + Hi-SCoA byte-for-byte comparison with captdriver
+#                                      (clones it; CAPTDRIVER=/path uses a checkout)
 #   QEMU_XTENSA=... tools/run_tests.sh  + firmware dry run on emulated ESP32-S3
 #   AIRPRINT=1 tools/run_tests.sh    + AirPrint server on this Mac: IPP conformance
 #                                      (ipptool) and printing URF / PWG documents
@@ -20,6 +22,7 @@ make -C host -s
 host/bjl_host selftest
 host/scan_host selftest 2>/dev/null | tail -1
 host/oled_host selftest
+host/capt_host 2>/dev/null | tail -1
 
 echo "== status screen (all screens in $OUT/oled.png)"
 rm -f $OUT/oled-*.pbm
@@ -36,7 +39,8 @@ done
 
 echo "== web UI unit tests (web/tests)"
 if [ -d web/node_modules ]; then
-    (cd web && node --test tests/*.test.ts 2>&1 | grep -E "^ℹ (pass|fail)|^✖" | tr '\n' ' '; echo)
+    # node's summary lines: "ℹ pass" (spec reporter) or "# pass" (TAP, when not a terminal)
+    (cd web && node --test tests/*.test.ts 2>&1 | grep -E "^(ℹ|#) (pass|fail)|^✖|^not ok" | tr '\n' ' '; echo)
     # the browser's URF, decoded by the independent Python decoder
     python3 - <<'PY'
 import sys, numpy as np
@@ -56,6 +60,12 @@ for dpi in 300 600; do
     host/bjl_host testpage $dpi $OUT/testpage$dpi.prn
     python3 tools/bjl_decode.py $OUT/testpage$dpi.prn --png $OUT/testpage$dpi.png --quiet | tail -6
 done
+
+if [ -n "${CAPTDRIVER:-}" ]; then
+    echo "== Hi-SCoA against captdriver (the encoder that printed on LBP2900 / LBP3010)"
+    if [ "$CAPTDRIVER" = 1 ]; then tools/captdriver_ref/run.sh | tail -1
+    else CAPTDRIVER="$CAPTDRIVER" tools/captdriver_ref/run.sh | tail -1; fi
+fi
 
 if [ -n "${GUTENPRINT:-}" ]; then
     echo "== comparison with Gutenprint's MG2500 driver"

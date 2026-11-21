@@ -39,8 +39,16 @@ Turns any USB-only printers into a wireless printer and scanner. An ESP32-S3 boa
 | 🟡 MX340, MX350 | MX340 to MX358 | yes (glass only) |
 | 🟡 MX360, MX410, MX420 | MX360 to MX428 | yes (glass only) |
 
+Canon CAPT lasers (host-based: the board renders and compresses each page, see [docs/capt.md](docs/capt.md)):
+
+| Series | Models | Scan |
+|---|---|---|
+| 🔴 LBP2900 | LBP2900, LBP2900B | no scanner |
+| 🔴 LBP3010 | LBP3010, LBP3018, LBP3050 | no scanner |
+
 - 🟢 Validated on real printer
 - 🟡 Expected to work, not tested on real hardware yet.
+- 🔴 Implemented and tested against an emulated printer only; the protocol comes from reverse engineering. Hardware test plan in [docs/capt.md](docs/capt.md#7-real-hardware-test-plan-both-models).
 
 The firmware recognises the printer when it is plugged in. Other printers? Please open an issue or a PR.
 

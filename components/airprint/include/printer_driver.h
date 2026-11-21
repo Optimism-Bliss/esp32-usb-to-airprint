@@ -30,6 +30,25 @@ typedef struct {
     int (*sync)(void *ctx, const char *what);
     // optional: called every 64 lines of a test page (yield, log progress)
     void (*progress)(void *ctx, int line, int lines);
+
+    // --- for host-based printers that talk request/reply (Canon CAPT);
+    // all optional, NULL where the platform has none
+    // Sends what write buffered, then reads one bulk IN transfer of at most
+    // max bytes: > 0 bytes, 0 = nothing within timeout_ms, < 0 = the link failed.
+    int (*read)(void *ctx, uint8_t *buf, size_t max, int timeout_ms);
+    // the job was canceled (the driver stops at a safe point)
+    bool (*cancelled)(void *ctx);
+    // a large buffer for a whole compressed page (the PSRAM on the board);
+    // NULL: the driver allocates
+    uint8_t *(*page_buffer)(void *ctx, size_t *size);
+    // the printer's state as the driver sees it, in the terms of the
+    // driver's status() hook (state, detail, data)
+    void (*status)(void *ctx, const char *state, const char *detail, const char *data);
+    // driver log lines: level 0 error, 1 warning, 2 info, 3 debug
+    void (*log)(void *ctx, int level, const char *msg);
+    // the clock (tests run on a virtual one); NULL: usleep / CLOCK_MONOTONIC
+    void (*sleep_ms)(void *ctx, int ms);
+    uint32_t (*now_ms)(void *ctx);
     void *ctx;
 } printer_io_t;
 
@@ -77,6 +96,15 @@ typedef struct printer_driver {
     // fields of the last status reply the USB layer reassembled) into IPP
     // terms: reasons, message, ink levels.
     void (*status)(const char *state, const char *detail, const char *data, airprint_status_t *st);
+
+    // --- optional, host-based printers (CAPT): the back channel is the
+    // driver's (the platform neither reads nor parses it), the driver asks
+    // for the status itself outside jobs (poll, with the device claimed;
+    // reports through io->status), and a cancel only sets io->cancelled
+    // (the driver ends the page cleanly) instead of aborting the transfers.
+    int (*poll)(const struct printer_driver *d, const printer_io_t *io);
+    bool raw_back_channel;
+    bool soft_cancel;
 } printer_driver_t;
 
 // The driver with this id (printers.c), NULL if none.

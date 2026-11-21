@@ -9,6 +9,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "sdkconfig.h"
+#include "shared_buf.h"
 #include "usb_printer.h"
 
 static const char *TAG = "print_job";
@@ -46,6 +47,7 @@ bool print_job_set_printer(const usb_printer_info_t *info)
     const printer_driver_t *before = print_job_driver();
     const printer_driver_t *d = printer_driver_match(info->vid, info->pid, info->device_id);
     s_attached = d;
+    usb_printer_set_raw(print_job_driver()->raw_back_channel);
     if (d)
         ESP_LOGI(TAG, "printer %04x:%04x: driver %s (%s)", info->vid, info->pid, d->id, d->make_model);
     else
@@ -89,6 +91,13 @@ typedef struct {
     uint32_t crc, bytes;
 } test_out_t;
 
+static volatile bool s_test_cancel;
+
+static int test_write_raw(void *ctx, const uint8_t *data, size_t len)
+{
+    return usb_printer_write(data, len) == ESP_OK ? 0 : -1;
+}
+
 static int test_write(void *ctx, const uint8_t *data, size_t len)
 {
     test_out_t *o = ctx;
@@ -103,6 +112,96 @@ static int test_write(void *ctx, const uint8_t *data, size_t len)
 static int test_sync(void *ctx, const char *what)
 {
     return print_job_sync(what);
+}
+
+// --- the hooks of request/reply printers (CAPT), for the test page, the
+// status poll and (through airprint_esp.c) the IPP jobs
+
+int print_job_read(void *ctx, uint8_t *buf, size_t max, int timeout_ms)
+{
+    return usb_printer_read(buf, max, (uint32_t)timeout_ms);
+}
+
+static uint8_t *s_page_buf;
+
+uint8_t *print_job_page_buffer(void *ctx, size_t *size)
+{
+    if (!s_page_buf)
+        s_page_buf = sbuf_acquire(SBUF_PRINT, size);
+    else
+        *size = sbuf_size();
+    if (!s_page_buf)
+        ESP_LOGW(TAG, "no page buffer (PSRAM): the driver allocates");
+    return s_page_buf;
+}
+
+void print_job_release_page_buffer(void)
+{
+    if (s_page_buf) {
+        sbuf_release(SBUF_PRINT, 0);
+        s_page_buf = NULL;
+    }
+}
+
+void print_job_status(void *ctx, const char *state, const char *detail, const char *data)
+{
+    usb_printer_set_status(state, detail, data);
+}
+
+void print_job_log(void *ctx, int level, const char *msg)
+{
+    switch (level) {
+    case 0: ESP_LOGE("capt", "%s", msg); break;
+    case 1: ESP_LOGW("capt", "%s", msg); break;
+    case 2: ESP_LOGI("capt", "%s", msg); break;
+    default: ESP_LOGI("capt", "%s", msg); break;    // command traces: only with capt_settings.trace
+    }
+}
+
+static bool test_cancelled(void *ctx)
+{
+    return s_test_cancel;
+}
+
+void print_job_cancel_test_page(void)
+{
+    s_test_cancel = true;
+}
+
+static volatile bool s_polling;
+
+bool print_job_polling(void)
+{
+    return s_polling;
+}
+
+// Status of a printer whose driver asks for it (CAPT), every 3 s while no
+// job holds the printer.
+static void poll_task(void *arg)
+{
+    for (;;) {
+        vTaskDelay(pdMS_TO_TICKS(3000));
+        const printer_driver_t *d = print_job_driver();
+        if (!d->poll || !usb_printer_connected() || usb_printer_job_active())
+            continue;
+        s_polling = true;
+        if (usb_printer_job_begin() != ESP_OK) {
+            s_polling = false;
+            continue;
+        }
+        printer_io_t io = {.write = test_write_raw, .read = print_job_read, .status = print_job_status,
+                           .log = print_job_log};
+        int r = d->poll(d, &io);
+        usb_printer_job_end();
+        s_polling = false;
+        if (r)
+            ESP_LOGD(TAG, "status poll failed (%d)", r);
+    }
+}
+
+void print_job_start_poll(void)
+{
+    xTaskCreate(poll_task, "printer_poll", 4096, NULL, 3, NULL);
 }
 
 static void test_progress(void *ctx, int line, int lines)
@@ -157,12 +256,21 @@ esp_err_t print_job_test_page(bool dry_run, int dpi, print_stats_t *stats)
              (unsigned long)esp_get_free_heap_size());
     test_out_t out = {.dry_run = dry_run};
     printer_io_t io = {.write = test_write, .sync = dry_run ? NULL : test_sync, .progress = test_progress, .ctx = &out};
+    if (!dry_run && d->raw_back_channel) {
+        s_test_cancel = false;
+        io.read = print_job_read;
+        io.cancelled = test_cancelled;
+        io.page_buffer = print_job_page_buffer;
+        io.status = print_job_status;
+        io.log = print_job_log;
+    }
     err = d->test_page(d, &io, dpi, label) == 0 ? ESP_OK : ESP_FAIL;
     if (!dry_run) {
-        if (err != ESP_OK && usb_printer_connected())
+        print_job_release_page_buffer();
+        if (err != ESP_OK && usb_printer_connected() && !d->raw_back_channel)
             ESP_LOGW(TAG, "job aborted, resetting printer");
         usb_printer_job_end();
-        if (err != ESP_OK && usb_printer_connected())
+        if (err != ESP_OK && usb_printer_connected() && !d->raw_back_channel)
             usb_printer_soft_reset();
     }
     stats->bytes = out.bytes;

@@ -26,7 +26,11 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "local_config.h"
+#include "canon_capt.h"
+#include "capt.h"
+#include "print_job.h"
 #include "symtab.h"
+#include "usb_printer.h"
 
 static const char *TAG = "debug";
 
@@ -614,6 +618,42 @@ static esp_err_t loglevel_post(httpd_req_t *req)
     return send_text(req, "400 Bad Request", "unknown level\n");
 }
 
+// CAPT laser printers: GET shows the settings and the printer's last status,
+// POST changes them: /capt?trace=0|1&pipeline=0|1&density=0..15&tonersave=0|1&poll_ms=50..1000
+static esp_err_t capt_handler(httpd_req_t *req)
+{
+    char q[128], v[16];
+    int density;
+    bool save;
+    canon_capt_get(&density, &save);
+    if (req->method == HTTP_POST && httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_OK) {
+        if (httpd_query_key_value(q, "trace", v, sizeof(v)) == ESP_OK)
+            capt_settings.trace = atoi(v) != 0;
+        if (httpd_query_key_value(q, "pipeline", v, sizeof(v)) == ESP_OK)
+            capt_settings.pipeline = atoi(v) ? 1 : 0;
+        if (httpd_query_key_value(q, "poll_ms", v, sizeof(v)) == ESP_OK && atoi(v) >= 50 && atoi(v) <= 1000)
+            capt_settings.poll_ms = atoi(v);
+        if (httpd_query_key_value(q, "density", v, sizeof(v)) == ESP_OK)
+            density = atoi(v);
+        if (httpd_query_key_value(q, "tonersave", v, sizeof(v)) == ESP_OK)
+            save = atoi(v) != 0;
+        canon_capt_set(density, save);
+        canon_capt_get(&density, &save);
+        ESP_LOGI(TAG, "CAPT settings: trace %d, pipeline %d, poll %d ms, density %d, toner save %d",
+                 capt_settings.trace, capt_settings.pipeline, capt_settings.poll_ms, density, save);
+    }
+    usb_printer_status_t st;
+    bool have = usb_printer_get_status(&st);
+    char out[512];
+    snprintf(out, sizeof(out),
+             "driver: %s\ntrace=%d pipeline=%d poll_ms=%d density=%d tonersave=%d\n"
+             "reply_timeout_ms=%d page_timeout_ms=%d paper_timeout_ms=%d\nstatus: %s %s %s\n",
+             print_job_driver()->id, capt_settings.trace, capt_settings.pipeline, capt_settings.poll_ms, density, save,
+             capt_settings.reply_timeout_ms, capt_settings.page_timeout_ms, capt_settings.paper_timeout_ms,
+             have ? st.state : "-", have ? st.detail : "", have ? st.data : "");
+    return send_text(req, "200 OK", out);
+}
+
 esp_err_t debug_server_start(bool (*busy)(void))
 {
     s_busy = busy;
@@ -626,7 +666,7 @@ esp_err_t debug_server_start(bool (*busy)(void))
     cfg.ctrl_port = DEBUG_HTTP_PORT + 1;
     cfg.stack_size = 6144;
     cfg.max_open_sockets = 3;
-    cfg.max_uri_handlers = 12;
+    cfg.max_uri_handlers = 14;
     cfg.lru_purge_enable = true;
     cfg.recv_wait_timeout = 10;
     httpd_handle_t h;
@@ -646,6 +686,8 @@ esp_err_t debug_server_start(bool (*busy)(void))
         {.uri = "/symbols", .method = HTTP_GET, .handler = symbols_get},
         {.uri = "/loglevel", .method = HTTP_POST, .handler = loglevel_post},
         {.uri = "/panic", .method = HTTP_POST, .handler = panic_post},
+        {.uri = "/capt", .method = HTTP_GET, .handler = capt_handler},
+        {.uri = "/capt", .method = HTTP_POST, .handler = capt_handler},
     };
     for (size_t i = 0; i < sizeof(uris) / sizeof(uris[0]); i++)
         if (httpd_register_uri_handler(h, &uris[i]) != ESP_OK)

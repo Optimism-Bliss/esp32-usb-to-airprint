@@ -53,6 +53,11 @@ typedef struct {
     void (*job_cancel)(void *ctx);              // asynchronous cancel of the running job
     void (*job_state)(void *ctx, bool printing);    // e.g. LED
     void (*identify)(void *ctx);                // Identify-Printer (blink LED)
+    // for request/reply printers (printer_io_t: read, page_buffer, status, log)
+    int (*job_read)(void *ctx, uint8_t *buf, size_t max, int timeout_ms);
+    uint8_t *(*page_buffer)(void *ctx, size_t *size);
+    void (*job_status)(void *ctx, const char *state, const char *detail, const char *data);
+    void (*driver_log)(void *ctx, int level, const char *msg);
     // Extra HTTP resources (scanner, debug downloads). Called for GET/HEAD/
     // DELETE requests and for POSTs outside /ipp; path includes the query string.
     // Return true once a response was sent with the airprint_http_* calls
@@ -104,6 +109,8 @@ typedef struct {
 } airprint_activity_t;
 // -1 before airprint_start.
 int airprint_get_activity(airprint_activity_t *a);
+// Cancels the running (or pending) job, as Cancel-Job does. False if none.
+bool airprint_cancel_active(void);
 
 #ifdef __cplusplus
 }

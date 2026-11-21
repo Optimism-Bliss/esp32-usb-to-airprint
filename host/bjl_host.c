@@ -283,6 +283,8 @@ static int cmd_selftest(void)
     CHECK(printer_driver_find("canon-mg2500"), "canon-mg2500 driver");
     for (int k = 0; printer_drivers[k]; k++) {
         const printer_driver_t *d = printer_drivers[k];
+        if (d->raw_back_channel)
+            continue;           // a CAPT laser (host/capt_host tests it)
         CHECK(d->test_page && d->model, "%s: test page", d->id);
         for (int i = 0; d->test_page && d->model && i < d->nresolutions; i++) {
             int dpi = d->resolutions[i];
@@ -327,6 +329,10 @@ static int cmd_selftest(void)
             {0x03f0, 0x1234, "MFG:HP;MDL:iP2700 series;", NULL},              // another maker
             {0x04a9, 0x1234, "MFG:Canon;MDL:iP2700 series XL;", NULL},
             {0x04a9, 0x1234, "", NULL},
+            {0x04a9, 0x2676, "MFG:Canon;MDL:Canon CAPT USB Device;", "canon-lbp2900"},   // a stuck LBP2900's id
+            {0x04a9, 0x1234, "MFG:Canon;CMD:CAPT;MDL:LBP2900;", "canon-lbp2900"},
+            {0x04a9, 0x26da, "", "canon-lbp3050"},
+            {0x04a9, 0x1234, "MFG:Canon;MDL:LBP3010/LBP3018/LBP3050;", "canon-lbp3050"},
         };
         for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
             const printer_driver_t *d = printer_driver_match(cases[i].vid, cases[i].pid, cases[i].device_id);

@@ -31,3 +31,17 @@ int print_job_sync(const char *what);
 // Test page resolution chosen in menuconfig
 int print_job_default_dpi(void);
 esp_err_t print_job_test_page(bool dry_run, int dpi, print_stats_t *stats);
+
+// --- request/reply printers (CAPT): printer_io_t hooks on the USB printer
+int print_job_read(void *ctx, uint8_t *buf, size_t max, int timeout_ms);
+// the PSRAM page buffer (shared_buf), taken until print_job_release_page_buffer
+uint8_t *print_job_page_buffer(void *ctx, size_t *size);
+void print_job_release_page_buffer(void);
+void print_job_status(void *ctx, const char *state, const char *detail, const char *data);
+void print_job_log(void *ctx, int level, const char *msg);
+// Starts the task that asks such a printer for its status between jobs.
+void print_job_start_poll(void);
+// True while that task holds the printer (a few ms: not "busy" for IPP).
+bool print_job_polling(void);
+// Cancels the running test page of such a printer (at the next safe point).
+void print_job_cancel_test_page(void);

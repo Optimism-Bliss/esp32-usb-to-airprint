@@ -30,6 +30,7 @@ static const char *TAG = "airprint_esp";
 #define IPP_PORT 631
 #define WEB_PORT 80             // the web UI for browsers (also on 631)
 #define CANCEL_FORCE_MS 8000    // graceful cancel didn't finish: abort the USB transfer
+#define CANCEL_FORCE_SOFT_MS 60000  // the same for host-based printers (they finish the page)
 
 static airprint_config_t s_cfg;
 static char s_uuid[40];
@@ -72,7 +73,7 @@ static void get_status(void *ctx, airprint_status_t *st)
     st->connected = usb_printer_connected();
     if (!st->connected)
         return;
-    st->busy = usb_printer_job_active() && !s_job_running;     // local test page or scan
+    st->busy = usb_printer_job_active() && !s_job_running && !print_job_polling();     // local test page or scan
     bool scanning = usb_scanner_active();
     if (scanning)
         snprintf(st->message, sizeof(st->message), "Scanning");
@@ -84,9 +85,11 @@ static void get_status(void *ctx, airprint_status_t *st)
     if (drv->status)
         drv->status(have ? cs.state : NULL, have ? cs.detail : NULL, have ? cs.data : NULL, st);
     const char *d = have ? cs.detail : "";
-    // USB printer class port status: paper empty
+    // USB printer class port status: paper empty (not asked of host-based
+    // printers: their driver reports it, and the LBP2900 stalls the request)
     uint8_t port = 0;
-    if (!s_job_running && !scanning && usb_printer_port_status(&port) == ESP_OK && (port & 0x20) &&
+    if (!drv->raw_back_channel && !s_job_running && !scanning && usb_printer_port_status(&port) == ESP_OK &&
+        (port & 0x20) &&
         !strstr(d, "MediaEmpty")) {
         add_reason(st, "media-empty-error");
         snprintf(st->message, sizeof(st->message), "Out of paper");
@@ -99,6 +102,11 @@ static void get_status(void *ctx, airprint_status_t *st)
 static int job_open(void *ctx)
 {
     esp_err_t err = usb_printer_job_begin();
+    // the status poll of a host-based printer holds it for a moment
+    for (int i = 0; err != ESP_OK && usb_printer_connected() && i < 20; i++) {
+        vTaskDelay(pdMS_TO_TICKS(100));
+        err = usb_printer_job_begin();
+    }
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "printer not available: %s", esp_err_to_name(err));
         return -1;
@@ -119,10 +127,13 @@ static int job_sync(void *ctx, const char *what)
 
 static void job_close(void *ctx, bool ok)
 {
+    print_job_release_page_buffer();
     usb_printer_job_end();      // sends the job's last bytes: a cancel may still need the timer
     esp_timer_stop(s_cancel_timer);
     s_job_running = false;
-    if (!ok && usb_printer_connected()) {
+    // (host-based printers: their driver ends the job itself; a printer-class
+    // reset is not something captdriver ever sends, so not sent here either)
+    if (!ok && usb_printer_connected() && !print_job_driver()->raw_back_channel) {
         ESP_LOGW(TAG, "job failed, resetting printer");
         usb_printer_soft_reset();
     }
@@ -141,7 +152,8 @@ static void cancel_timeout(void *arg)
 static void job_cancel(void *ctx)
 {
     esp_timer_stop(s_cancel_timer);
-    esp_timer_start_once(s_cancel_timer, CANCEL_FORCE_MS * 1000ULL);
+    int ms = print_job_driver()->soft_cancel ? CANCEL_FORCE_SOFT_MS : CANCEL_FORCE_MS;
+    esp_timer_start_once(s_cancel_timer, ms * 1000ULL);
 }
 
 static void job_state(void *ctx, bool printing)
@@ -464,6 +476,10 @@ esp_err_t airprint_esp_start(const char *hostname, void (*on_job_state)(bool pri
         .job_cancel = job_cancel,
         .job_state = job_state,
         .identify = identify,
+        .job_read = print_job_read,
+        .page_buffer = print_job_page_buffer,
+        .job_status = print_job_status,
+        .driver_log = print_job_log,
     };
     alloc_shared_buf();
     s_scan_cfg = (scan_config_t){
@@ -499,6 +515,8 @@ esp_err_t airprint_esp_start(const char *hostname, void (*on_job_state)(bool pri
     events_add_source("scan", scan_service_status_json, NULL);
     if (airprint_start(&s_cfg) != 0 || events_start() != 0)
         return ESP_FAIL;
+    if (strcmp(MODE, "dev") != 0)
+        print_job_start_poll();     // status of host-based printers between jobs
     esp_err_t err = start_mdns(hostname);
     // from now on a printer of another model changes what is announced; one
     // plugged in while this started is caught up here
