@@ -6,6 +6,8 @@ dependencies.lock
 # generated from sdkconfig.defaults + Kconfig on every build
 sdkconfig.esp32s3
 sdkconfig.qemu
+sdkconfig.lbp2900
+sdkconfig.lbp3050
 sdkconfig.old
 
 # local settings (WiFi credentials); the committed template is .env.example

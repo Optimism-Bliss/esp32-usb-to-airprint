@@ -250,11 +250,25 @@ image origin x = 120, y = 96 px, line size (A4: 592 bytes, 4736 px), lines
 
 ```
 pip install platformio            # or the VS Code extension
-pio run                           # first build creates .env; edit it:
-#   WIFI_SSID=...  WIFI_PASSWORD=...  PRINTER_NAME=Canon LBP2900  HOSTNAME=lbp2900  MODE=debug
-pio run -t upload                 # board on the COM port
-pio run -t logs                   # follow the log over Wi-Fi (MODE=debug)
+pio run -e lbp2900                # first build creates .env; edit it:
+#   PRINTER_NAME=Canon LBP2900  HOSTNAME=lbp2900  MODE=debug  (WIFI_SSID / WIFI_PASSWORD optional)
+pio run -e lbp2900 -t upload      # board on the COM port
+tools/set_wifi.py /dev/ttyUSB0    # Wi-Fi over the COM port (or: join "lbp2900-setup" with a phone)
+pio run -e lbp2900 -t logs        # follow the log over Wi-Fi (MODE=debug)
 ```
+
+One firmware per printer (`platformio.ini`):
+
+| env | for | driver built in | output |
+|---|---|---|---|
+| `lbp2900` | LBP2900 / LBP2900B | `canon-lbp2900` only | `.pio/build/lbp2900/firmware.bin` |
+| `lbp3050` | LBP3010 / LBP3018 / LBP3050 | `canon-lbp3050` only | `.pio/build/lbp3050/firmware.bin` |
+| `esp32s3` (default) | every supported printer | all, chosen by USB id | `.pio/build/esp32s3/firmware.bin` |
+
+Each one announces its model (IPP, mDNS) as soon as it starts, before the
+printer is plugged in. The two boards need different `HOSTNAME` /
+`PRINTER_NAME` in `.env` if they share a network (`.env` is shared by the
+envs: edit it between the two builds, or flash and set the name later).
 
 `MODE=debug` adds the remote log (`nc <board> 2323`), OTA (`pio run -t ota`)
 and `http://<board>:8080/` (`/info`, `/log`, `/capt`). The build is
@@ -281,6 +295,9 @@ a fix before going further if they fail.
 
 | # | step | expected | what it verifies |
 |---|---|---|---|
+| W1 | flash with `WIFI_SSID` empty; on a phone, join `<HOSTNAME>-setup` | the sign-in page opens (else `http://192.168.4.1/wifi`); networks listed; pick one, enter the password: "Saved. Connecting…"; within a minute the board is at `http://<HOSTNAME>.local/`, the setup network closes | setup AP, captive portal, station |
+| W2 | `tools/set_wifi.py <COM port>` with another network | "Wi-Fi saved. The board is restarting."; the board joins it | COM port setup |
+| W3 | switch the router off for 2 min | `<HOSTNAME>-setup` appears after ~1 min; router back on: the board reconnects, the setup network closes | fallback and recovery |
 | 1 | plug the printer in, switch it on | `usb_printer: 04a9:2676 …`, the interfaces and endpoints, `IEEE 1284 ID: …MDL:LBP2900…`, `driver canon-lbp2900`, `back channel: raw` | USB id, MDL, interface (stop) |
 | 2 | wait 10 s; `curl http://<board>:8080/capt` | `status: idle …` with `st …` values; log: `printer info: id …, block …` | the request/reply link, GetPrinterInfo, status (stop) |
 | 3 | double-press BOOT (test page) | one sheet: frame 10 mm from the edges, title, 11 gray steps, lines 1-8 dots, 10 mm grid | the page sequence, Hi-SCoA, page parameters (stop) |
@@ -305,12 +322,10 @@ of steps 3-4 (a photo), and the timing lines of steps 6 and 7.
 ## 8. Not done yet
 
 - **Real-hardware verification** of everything above.
-- **Wi-Fi setup from a web page** (an access point on first boot and a
-  form). The credentials are still compiled in from `.env`. The parts the
-  web UI already has: printer status, print and scan pages, and live state.
-  Job list and cancel go through IPP (any client, or `ipp_print.py`). The
-  diagnostic log and OTA are on the debug server (`:8080`, `tools/remote.py`),
-  not a page yet.
+- The web UI has the printer status, the print and scan pages, live state
+  and Wi-Fi setup (`/wifi`; see the README). Job list and cancel go through
+  IPP (any client, or `ipp_print.py`). The diagnostic log and OTA are on the
+  debug server (`:8080`, `tools/remote.py`), not a page yet.
 - The web UI's own print dialog still lays out pages for the inkjets'
   printable area. Pages print, but the edges may differ by about 1 mm.
 - Paper sizes other than A4, Letter and A5. Envelopes and heavy paper (the

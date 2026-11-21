@@ -32,6 +32,7 @@ typedef struct {
     const char *name;           // host name
     bool wifi_configured;       // false: no WiFi in .env, the printer works locally only
     char ip[16];                // "" while not connected
+    const char *setup_ap;       // the setup WiFi while it is open ("canon-lbp2900-setup"), else NULL
     int rssi;                   // dBm, 0 = unknown
     bool started;               // the print server runs (else only print.status.connected counts)
     airprint_activity_t print;

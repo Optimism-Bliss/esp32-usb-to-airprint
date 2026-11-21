@@ -9,6 +9,21 @@ menu "Printer server"
             components/printers/printers.c. A recognised printer (USB id or
             IEEE 1284 model name) uses its own driver.
 
+    config PRINTERS_INKJET
+        bool "Canon PIXMA inkjet drivers (MG2500 family)"
+        default y
+        help
+            The drivers built in. A firmware for one printer (the lbp2900 and
+            lbp3050 environments of platformio.ini) keeps only its own.
+
+    config PRINTERS_LBP2900
+        bool "Canon LBP2900 driver (CAPT)"
+        default y
+
+    config PRINTERS_LBP3050
+        bool "Canon LBP3010 / LBP3018 / LBP3050 driver (CAPT)"
+        default y
+
     choice PRINTER_RESOLUTION
         prompt "Test page resolution"
         default PRINTER_RES_600

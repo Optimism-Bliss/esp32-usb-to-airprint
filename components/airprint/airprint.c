@@ -299,6 +299,16 @@ const char *airprint_http_host(airprint_http_t *c)
     return c->host;
 }
 
+bool airprint_http_local_ip(airprint_http_t *c, uint8_t ip[4])
+{
+    struct sockaddr_in a;
+    socklen_t l = sizeof(a);
+    if (getsockname(c->fd, (struct sockaddr *)&a, &l) != 0 || a.sin_family != AF_INET)
+        return false;
+    memcpy(ip, &a.sin_addr.s_addr, 4);
+    return true;
+}
+
 const char *airprint_http_if_none_match(airprint_http_t *c)
 {
     return c->if_none_match;

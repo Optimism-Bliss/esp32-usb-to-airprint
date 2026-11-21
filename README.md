@@ -39,7 +39,7 @@ Turns any USB-only printers into a wireless printer and scanner. An ESP32-S3 boa
 | 🟡 MX340, MX350 | MX340 to MX358 | yes (glass only) |
 | 🟡 MX360, MX410, MX420 | MX360 to MX428 | yes (glass only) |
 
-Canon CAPT lasers (host-based: the board renders and compresses each page, see [docs/capt.md](docs/capt.md)):
+Canon CAPT lasers (host-based: the board renders and compresses each page, see [docs/capt.md](docs/capt.md)). Each has its own firmware: `pio run -e lbp2900 -t upload` or `pio run -e lbp3050 -t upload`:
 
 | Series | Models | Scan |
 |---|---|---|
@@ -77,6 +77,12 @@ Optionally: a SSD1315 OLED screen and a 3D-printed case, see later in this tutor
    `MODE=debug` lets you update the board over WiFi later (see below); `MODE=normal` does without. `.env` is git-ignored, so your WiFi password stays local.
 
 **Step 3: Flash.** Connect the board's **COM** port to your computer and run `pio run -t upload`. PlatformIO finds the board's serial port; if several are connected, add `--upload-port /dev/cu.usbmodem…`.
+
+**WiFi without rebuilding.** `WIFI_SSID` can stay empty; the network can be set on the board, and a network set there wins over `.env`'s:
+
+- **From a phone:** with no network that works, the board opens its own WiFi **`<HOSTNAME>-setup`** (open, or protected by `SETUP_PASSWORD` in `.env`). Join it: the setup page opens by itself (else go to `http://192.168.4.1/wifi`). Pick the network and enter its password. The setup WiFi closes a minute after the board is connected. The OLED shows its name while it is open.
+- **Over the COM port:** `pip install pyserial`, then `tools/set_wifi.py /dev/ttyUSB0` (or `COM5`). It asks for the SSID and the password, and the board saves them and restarts.
+- **Later:** `http://<HOSTNAME>.local/wifi` shows the connection and the networks in range. Changing the network from the home network needs `MODE=debug` or `SETUP_PASSWORD`; otherwise use the setup WiFi (forget the network, or move the board out of range) or the COM port.
 
 ## Using it
 

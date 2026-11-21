@@ -35,6 +35,7 @@
 #include "status_led.h"
 #include "usb_printer.h"
 #include "wifi.h"
+#include "wifi_serial.h"
 
 static const char *TAG = "main";
 
@@ -264,6 +265,7 @@ void main_unused(void)
 #else
 void app_main(void)
 {
+    wifi_serial_start();        // tools/set_wifi.py: first, it writes 2 s after the port's reset
     bool debug = strcmp(MODE, "debug") == 0;
     if (debug)
         debug_log_start(64 * 1024);
@@ -275,7 +277,8 @@ void app_main(void)
     ESP_LOGI(TAG, "ready: press BOOT (or GPIO%d) to scan, twice for a test page", CONFIG_PRINT_BUTTON2_GPIO);
 
     xTaskCreate(ota_confirm_task, "ota_confirm", 3072, NULL, 2, NULL);
-    // AirPrint; the printer keeps working locally if WiFi isn't configured
+    // WiFi (the .env network, the one saved from the setup page, or the
+    // "<HOSTNAME>-setup" network to choose one) and AirPrint
     if (wifi_start(HOSTNAME) == ESP_OK) {
         if (airprint_esp_start(HOSTNAME, on_airprint_job) != ESP_OK)
             ESP_LOGE(TAG, "AirPrint failed to start");

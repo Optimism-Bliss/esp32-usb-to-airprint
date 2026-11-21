@@ -348,7 +348,13 @@ void oled_ui_render(const oled_state_t *st, uint8_t *fb)
     text_fit(fb, 0, Y_NAME, st->name ? st->name : "", OLED_WIDTH - 20);
     if (st->wifi_configured)
         wifi_icon(fb, OLED_WIDTH - 1, Y_NAME, st->ip[0] != 0, st->rssi);
-    line(fb, Y_IP, st->ip[0] ? st->ip : st->wifi_configured ? "Connecting to WiFi..." : "No WiFi configured");
+    char setup[48];
+    if (!st->ip[0] && st->setup_ap)
+        snprintf(setup, sizeof(setup), "WiFi setup: %s", st->setup_ap);
+    line(fb, Y_IP, st->ip[0]           ? st->ip
+                   : st->setup_ap      ? setup
+                   : st->wifi_configured ? "Connecting to WiFi..."
+                                         : "No WiFi configured");
     oled_fill(fb, 0, Y_RULE, OLED_WIDTH, 1, true);
 
     // what the device does, most important first

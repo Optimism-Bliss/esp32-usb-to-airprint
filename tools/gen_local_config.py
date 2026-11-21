@@ -78,7 +78,7 @@ def main():
         with open(OUT_FILE, "w", encoding="utf-8") as f:
             f.write(text)
     if not values.get("WIFI_SSID"):
-        print("Warning: WIFI_SSID is empty, set it in .env")
+        print("Note: WIFI_SSID is empty: the board opens its \"<HOSTNAME>-setup\" WiFi to choose a network")
 
 
 main()

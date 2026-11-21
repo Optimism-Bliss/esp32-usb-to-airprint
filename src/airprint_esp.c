@@ -24,6 +24,7 @@
 #include "status_led.h"
 #include "usb_printer.h"
 #include "webui.h"
+#include "wifi_setup.h"
 
 static const char *TAG = "airprint_esp";
 
@@ -238,7 +239,8 @@ static void dev_job_close(void *ctx, bool ok)
 
 static bool web_http(airprint_http_t *h, const char *method, const char *path)
 {
-    return scan_service_http(h, method, path) || events_http(h, method, path) || webui_http(h, method, path);
+    return wifi_setup_http(h, method, path) || scan_service_http(h, method, path) || events_http(h, method, path) ||
+           webui_http(h, method, path);
 }
 
 static bool dev_http(void *ctx, airprint_http_t *h, const char *method, const char *path)

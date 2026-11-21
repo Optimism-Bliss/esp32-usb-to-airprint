@@ -16,13 +16,31 @@ extern const printer_driver_t canon_mg2500_driver, canon_mg2400_driver, canon_p2
 // canon_capt.c: Canon CAPT lasers (host-based, components/capt)
 extern const printer_driver_t canon_lbp2900_driver, canon_lbp3050_driver;
 
+// The firmware for one printer (platformio.ini: lbp2900, lbp3050) keeps only
+// its driver (Kconfig PRINTERS_*); the host build and the default firmware
+// have all of them.
+#ifdef ESP_PLATFORM
+#include "sdkconfig.h"
+#else
+#define CONFIG_PRINTERS_INKJET 1
+#define CONFIG_PRINTERS_LBP2900 1
+#define CONFIG_PRINTERS_LBP3050 1
+#endif
+
 const printer_driver_t *const printer_drivers[] = {
+#ifdef CONFIG_PRINTERS_INKJET
     &canon_mg2500_driver, &canon_mg2400_driver, &canon_p200_driver, &canon_mg2900_driver, &canon_mg3000_driver,
     &canon_e470_driver, &canon_e460_driver, &canon_ip2800_driver, &canon_e3100_driver, &canon_ts3100_driver,
     &canon_mp230_driver, &canon_ip2700_driver, &canon_mp250_driver, &canon_mp270_driver, &canon_mp280_driver,
     &canon_mp490_driver, &canon_mp493_driver, &canon_mp495_driver, &canon_mx340_driver, &canon_mx350_driver,
     &canon_mx360_driver, &canon_mx410_driver, &canon_mx420_driver,
-    &canon_lbp2900_driver, &canon_lbp3050_driver,
+#endif
+#ifdef CONFIG_PRINTERS_LBP2900
+    &canon_lbp2900_driver,
+#endif
+#ifdef CONFIG_PRINTERS_LBP3050
+    &canon_lbp3050_driver,
+#endif
     NULL,
 };
 

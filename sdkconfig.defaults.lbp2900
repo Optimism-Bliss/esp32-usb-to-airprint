@@ -1,0 +1,5 @@
+# Added to sdkconfig.defaults for the lbp2900 env: a firmware for the Canon LBP2900
+# only (its driver is the default and the only one built in)
+CONFIG_PRINTER_DRIVER="canon-lbp2900"
+# CONFIG_PRINTERS_INKJET is not set
+# CONFIG_PRINTERS_LBP3050 is not set

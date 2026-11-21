@@ -156,7 +156,12 @@ static void gather(oled_state_t *st)
 {
     memset(st, 0, sizeof(*st));
     st->name = s_hostname;
-    st->wifi_configured = WIFI_SSID[0] != 0;
+    wifi_status_t ws;
+    wifi_get_status(&ws);
+    st->wifi_configured = ws.ssid[0] != 0;
+    static char ap[33];
+    snprintf(ap, sizeof(ap), "%s", ws.ap_ssid);
+    st->setup_ap = ws.ap_on ? ap : NULL;
     if (wifi_connected()) {
         wifi_get_ip(st->ip, sizeof(st->ip));
         st->rssi = wifi_rssi();

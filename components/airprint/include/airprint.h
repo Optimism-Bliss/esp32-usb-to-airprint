@@ -79,6 +79,9 @@ void airprint_http_send_ex(airprint_http_t *h, const char *status, const char *t
 int airprint_http_read_body(airprint_http_t *h, void *buf, size_t max);
 // The request's Host header ("" if none), e.g. "canon-mg2500.local:80".
 const char *airprint_http_host(airprint_http_t *h);
+// The board's address the client connected to (tells the setup access
+// point from the home network). False if unknown.
+bool airprint_http_local_ip(airprint_http_t *h, uint8_t ip[4]);
 // The request's If-None-Match header ("" if none).
 const char *airprint_http_if_none_match(airprint_http_t *h);
 // A streamed 200 response of unknown length (chunked); extra_headers are
